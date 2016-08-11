@@ -1,0 +1,91 @@
+---
+author: "Joe Brew"
+date: "August 11, 2016"
+fig_height: 2.6
+fig_width: 4
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: yeti
+---
+
+---
+title: "Impact of LAIV on School Absenteeism"
+---
+
+
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE, comment = NA, error= FALSE, cache = F}
+# No scientific notation
+options(scipen=999)
+
+# Packages 
+library(xtable)
+library(knitr)
+library(dplyr)
+library(maptools)
+library(gpclib)
+library(ggplot2)
+library(RColorBrewer)
+library(tidyr)
+library(plotly)
+
+# Basic knitr options
+opts_chunk$set(comment = NA, 
+               echo = FALSE, 
+               warning = FALSE, 
+               message = FALSE, 
+               error = FALSE, 
+               cache = FALSE)
+
+# Source helper functions
+source('lib/functions.R')
+
+# Read in data
+ab <- read_and_clean_absenteeism_data()
+im <- read_and_clean_immunization_data()
+
+# Join and clean up data
+students <- ab %>%
+  dplyr::select(id, lunch, race, school, grade, dob) %>%
+  filter(!duplicated(id)) %>%
+  dplyr::rename(roster_lunch = lunch,
+         roster_race = race,
+         roster_school = school,
+         roster_grade = grade,
+         roster_dob = dob)
+students <-
+  left_join(x = students %>%
+              mutate(id = as.character(id)),
+            y = im,
+            by = c('id' = 'student_id')) %>%
+  mutate(consent_form_return =
+           ifelse(is.na(consent_form_return), 
+                  FALSE,
+                  consent_form_return),
+         consent_form_yes = 
+           ifelse(is.na(consent_form_yes),
+                  FALSE,
+                  consent_form_yes),
+         vaccine = 
+           ifelse(is.na(vaccine),
+                  FALSE,
+                  vaccine)) %>%
+  dplyr::select(id,
+                roster_lunch,
+                roster_race,
+                roster_school,
+                roster_grade,
+                roster_dob,
+                consent_form_return,
+                consent_form_yes,
+                vaccine) %>%
+  dplyr::rename(lunch = roster_lunch,
+                race = roster_race,
+                school = roster_school,
+                grade = roster_grade,
+                dob = roster_dob)
+```
+
+Some text here.
