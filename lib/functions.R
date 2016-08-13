@@ -1,5 +1,5 @@
 # Read and clean absenteeism data
-read_and_clean_absenteeism_data <- function(file = 'data/srubbed_data_for_joe.csv'){
+read_and_clean_absenteeism_data <- function(file = 'data/scrubbed_data_for_joe_correct_ids.csv'){
   
   # Package requirements
   require(readr)
@@ -15,7 +15,7 @@ read_and_clean_absenteeism_data <- function(file = 'data/srubbed_data_for_joe.cs
                    stop = 10)
   
   # Make date objects
-  df$absenceDate <- as.Date(df$absenceDate)
+  df$absenceDate <- as.Date(df$absenceDate, format = '%m/%d/%Y')
   df$dob <- as.Date(df$dob)
   
   # Clean up race ethnicity
@@ -42,7 +42,7 @@ read_and_clean_absenteeism_data <- function(file = 'data/srubbed_data_for_joe.cs
   
   # Remove useless columns and clean up names
   df <- df %>% 
-    dplyr::select(personID,
+    dplyr::select(studentNumber,
                   lunch,
                   race,
                   schoolName,
@@ -50,7 +50,7 @@ read_and_clean_absenteeism_data <- function(file = 'data/srubbed_data_for_joe.cs
                   dob,
                   absenceDate) 
   df <- df %>%
-    dplyr::rename(id = personID,
+    dplyr::rename(id = studentNumber,
            school = schoolName,
            date = absenceDate)
   
@@ -145,13 +145,18 @@ read_and_clean_immunization_data <- function(directory = 'data/immunization_data
                   consent_form_return,
                   consent_form_yes,
                   vaccine,
-                  vaccine_date)
+                  vaccine_date) %>%
+    dplyr::rename(id = student_id)
   
   # Make data.frame 
   df <- data.frame(df)
   
   # Remove those for whom student id appears to be a birthday
-  df <- df[!grepl('/', df$student_id),]
+  df <- df[!grepl('/', df$id),]
+  df <- df[!grepl('-', df$id),]
+  
+  # Make numeric
+  df$id <- as.numeric(as.character(df$id))
   
   # Remove duplicates
   # arrange so that yesses come first
@@ -161,6 +166,6 @@ read_and_clean_immunization_data <- function(directory = 'data/immunization_data
     arrange(desc(consent_form_return), 
             desc(consent_form_yes),
             desc(vaccine))
-  df <- df[!duplicated(df$student_id),]
+  df <- df[!duplicated(df$id),]
   return(df)
 }

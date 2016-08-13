@@ -56,10 +56,9 @@ students <- ab %>%
          roster_grade = grade,
          roster_dob = dob)
 students <-
-  left_join(x = students %>%
-              mutate(id = as.character(id)),
+  left_join(x = students,
             y = im,
-            by = c('id' = 'student_id')) %>%
+            by = 'id') %>%
   mutate(consent_form_return =
            ifelse(is.na(consent_form_return), 
                   FALSE,
