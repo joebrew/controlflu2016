@@ -1,5 +1,5 @@
 ---
-author: "Joe Brew"
+author: "Joe Brew, Kathleen Ryan, Paul Myers, Nadia Kovacevich, ACPS team, Parker Small"
 date: "August 11, 2016"
 fig_height: 2.6
 fig_width: 4
@@ -21,15 +21,17 @@ title: "Impact of LAIV on School Absenteeism"
 options(scipen=999)
 
 # Packages 
+library(plyr)
+library(dplyr)
 library(xtable)
 library(knitr)
-library(dplyr)
 library(maptools)
 library(gpclib)
 library(ggplot2)
 library(RColorBrewer)
 library(tidyr)
 library(plotly)
+library(ggthemes)
 
 # Basic knitr options
 opts_chunk$set(comment = NA, 
@@ -85,6 +87,409 @@ students <-
                 school = roster_school,
                 grade = roster_grade,
                 dob = roster_dob)
+
+# Create panel data
+panel_data <- create_panel_data(ab = ab,
+                                students = students)
+
+# Define flu season and get other info into panel data
+df <- panel_data
+df$flu_season <- df$date >= '2015-10-04' & df$date <= '2016-05-21'
+df <- left_join(df, students, by = 'id')
+
+# Get non flu season absenteeism for each person
+nfsa <- 
+  df %>%
+  filter(!flu_season) %>%
+  group_by(id) %>%
+  summarise(nfsa = length(which(absent)),
+            eligibles = length(absent)) %>%
+  mutate(nfsar = nfsa / eligibles * 100) %>%
+  dplyr::select(id, nfsar)
+df <- left_join(df, nfsa, by = 'id')
 ```
 
-Some text here.
+# Introduction
+
+Influenza is a highly contagious, upper respiratory viral infection which causes fever, cough, headache and muscle pain.  In the United States, seasonal influenza kills between 1.4 to 16.7 people per 100,000 per year.  In addition to mortality, influenza causes significant morbidity across age groups, with systemic symptoms and fever lasting 2 to 5 days.  Though the risk of death or severe complications is greatest among the elderly, children have the highest attack rates in influenza outbreaks, and are often the “major source of transmission” of influenza to others in their community. 
+
+In order to decrease the burden of influenza, public health practitioners in some locations have implemented school-located influenza vaccination (SLIV) programs in an effort to raise pediatric immunization rates.  The rationale for these programs is that immunizing children (a) protects them directly, (b) protects the community indirectly and (c) lowers the costs of influenza by decreasing absenteeism, increasing productivity and preventing human death and suffering.
+
+This study aims to assess the impact on student absenteeism of Alachua County’s “Control Flu” SLIV program in 2015/2016.  Given both the plausibility of and evidence for influenza immunization potential for decreasing student absenteeism, we hypothesize (a) that students who receive the seasonal influenza immunization have a lower flu season absenteeism rate than their non-immunized peers and (b) that both immunized and non-immunized students in schools with high vaccine uptake also have a lower flu season absenteeism rate than schools with lower immunization rates, due to indirect protection (aka, “herd immunity”). 
+
+# Methods
+
+During the 2015-2016 flu immunization campaign (August-November), organizers of the "Control Flu" (CF) campaign administered consent forms for the administration of live attenuated influenza vaccine (LAIV) through Alachua County Public Schools (ACPS). Students whose parents/guardians gave affirmative consent were subsequently immunized _en masse_ with the age appropriate dose on dates decided _a priori_ for each school. ACPS provided rosters were employed to structure real-time recording of immunizations and consent form returns.
+
+Alachua County Public Schools provided sociodemographic and absenteeism data for its `r nrow(students)`.  This dataset included every student enrolled at any point during this period.  Features included free/reduced lunch status, race, homeroom teacher, grade, age, name and exact date of all absences.
+
+Peak flu season was considered October 4, 2015 through May 21, 2016, as per the CDC's definition.
+
+CF program data was later combined with ACPS absenteeism data. A "panel" dataset was constructed. Binomial logistic regression was employed to estimate the odds of flu season absence as a function of immunization status and potential confounding factors.
+
+# Results
+
+`r length(which(im$vaccine))` students of `r nrow(students)` were immunized. Of the 180 school days considered for the period of observation, there were `r length(which(panel_data$absent))` individual stuent absences of a total `r nrow(panel_data)` student-days (average absenteeism rate of `r round(length(which(panel_data$absent)) / nrow(panel_data) * 100, digits = 2)`%).
+
+## Consent form return
+
+The below table shows consent form return and consents by school.
+
+```{r}
+by_school <- df %>%
+  group_by(school) %>%
+  summarise(students = length(unique(id)),
+            consent_form_returns = length(unique(id[consent_form_return])),
+            consents = length(unique(id[consent_form_yes])),
+            immunizations = length(unique(id[vaccine])),
+            eligible_days = length(vaccine),
+            absences = length(which(absent)),
+            flu_season_days = length(which(flu_season)),
+            flu_season_absences = length(which(absent & flu_season)),
+            non_flu_season_days = length(which(!flu_season)),
+            non_flu_season_absences = length(which(absent & !flu_season))) %>%
+  mutate(consent_form_return_rate = consent_form_returns / students * 100,
+         consent_rate = consents / students * 100,
+         immunization_rate = immunizations / students * 100,
+         absenteeism_rate = absences / eligible_days * 100,
+         flu_season_absenteeism_rate = flu_season_absences / flu_season_days * 100,
+         non_flu_season_absenteeism_rate = non_flu_season_absences / non_flu_season_days * 100)
+
+
+by_school %>%
+  dplyr::select(school, students, consent_form_returns,
+                consents, consent_form_return_rate) %>%
+  make_pretty()
+```
+
+## Immunization
+
+The below table shows immunizations rates by school.
+
+```{r}
+by_school %>%
+  dplyr::select(school, students, 
+                immunizations,
+                immunization_rate) %>%
+  make_pretty()
+```
+
+## Absences
+
+The below table shows aggregate absenteeism data by school.
+
+```{r}
+by_school %>%
+  dplyr::select(school, students, 
+                absenteeism_rate,
+                non_flu_season_absenteeism_rate,
+                flu_season_absenteeism_rate) %>%
+  make_pretty()
+```
+
+## Race
+
+```{r}
+by_race <- df %>%
+  group_by(race) %>%
+  summarise(students = length(unique(id)),
+            consent_form_returns = length(unique(id[consent_form_return])),
+            consents = length(unique(id[consent_form_yes])),
+            immunizations = length(unique(id[vaccine])),
+            eligible_days = length(vaccine),
+            absences = length(which(absent)),
+            flu_season_days = length(which(flu_season)),
+            flu_season_absences = length(which(absent & flu_season)),
+            non_flu_season_days = length(which(!flu_season)),
+            non_flu_season_absences = length(which(absent & !flu_season))) %>%
+  mutate(consent_form_return_rate = consent_form_returns / students * 100,
+         consent_rate = consents / students * 100,
+         immunization_rate = immunizations / students * 100,
+         absenteeism_rate = absences / eligible_days * 100,
+         flu_season_absenteeism_rate = flu_season_absences / flu_season_days * 100,
+         non_flu_season_absenteeism_rate = non_flu_season_absences / non_flu_season_days * 100)
+```
+
+The below chart shows consent form return rate by race.
+
+```{r}
+x <- by_race %>%
+  arrange(consent_form_return_rate) %>%
+  filter(!is.na(race))
+x$race <- factor(x$race, levels = x$race)
+g <- 
+  ggplot(data = x,
+       aes(x = race,
+           y = consent_form_return_rate)) +
+  geom_bar(stat = 'identity', alpha = 0.6) +
+  theme_economist() +
+  xlab('Race') +
+  ylab('Consent form return rate') +
+  ggtitle('Consent form return rate by race')
+ggplotly(g)
+```
+
+The below chart shows immunization rate by race.
+
+```{r}
+x <- by_race %>%
+  arrange(immunization_rate) %>%
+  filter(!is.na(race))
+x$race <- factor(x$race, levels = x$race)
+g <- 
+  ggplot(data = x,
+       aes(x = race,
+           y = immunization_rate)) +
+  geom_bar(stat = 'identity', alpha = 0.6) +
+  theme_economist() +
+  xlab('Race') +
+  ylab('Immunization rate') +
+  ggtitle('Immunization rate by race')
+ggplotly(g)
+```
+
+The below chart shows absenteeism rate by race.
+
+```{r}
+x <- by_race %>%
+  arrange(absenteeism_rate) %>%
+  filter(!is.na(race))
+x$race <- factor(x$race, levels = x$race)
+g <- 
+  ggplot(data = x,
+       aes(x = race,
+           y = absenteeism_rate)) +
+  geom_bar(stat = 'identity', alpha = 0.6) +
+  theme_economist() +
+  xlab('Race') +
+  ylab('Absenteeism  rate') +
+  ggtitle('Absenteeism rate by race')
+ggplotly(g)
+```
+
+
+## Grade
+
+```{r}
+by_grade <- df %>%
+  group_by(grade) %>%
+  summarise(students = length(unique(id)),
+            consent_form_returns = length(unique(id[consent_form_return])),
+            consents = length(unique(id[consent_form_yes])),
+            immunizations = length(unique(id[vaccine])),
+            eligible_days = length(vaccine),
+            absences = length(which(absent)),
+            flu_season_days = length(which(flu_season)),
+            flu_season_absences = length(which(absent & flu_season)),
+            non_flu_season_days = length(which(!flu_season)),
+            non_flu_season_absences = length(which(absent & !flu_season))) %>%
+  mutate(consent_form_return_rate = consent_form_returns / students * 100,
+         consent_rate = consents / students * 100,
+         immunization_rate = immunizations / students * 100,
+         absenteeism_rate = absences / eligible_days * 100,
+         flu_season_absenteeism_rate = flu_season_absences / flu_season_days * 100,
+         non_flu_season_absenteeism_rate = non_flu_season_absences / non_flu_season_days * 100)
+
+# Order
+by_grade <- by_grade[c(14, 13, 1, 5, 6, 7, 8, 9, 10, 11, 12, 2, 3, 4),]
+by_grade$grade <- factor(by_grade$grade, levels = by_grade$grade)
+```
+
+The below chart shows consent form return rate by grade.
+
+```{r}
+x <- by_grade %>%
+  filter(!is.na(grade))
+x$grade <- factor(x$grade, levels = x$grade)
+g <- 
+  ggplot(data = x,
+       aes(x = grade,
+           y = consent_form_return_rate)) +
+  geom_bar(stat = 'identity', alpha = 0.6) +
+  theme_economist() +
+  xlab('Grade') +
+  ylab('Consent form return rate') +
+  ggtitle('Consent form return rate by grade')
+ggplotly(g)
+```
+
+The below chart shows immunization rate by grade.
+
+```{r}
+x <- by_grade %>%
+  filter(!is.na(grade))
+x$grade <- factor(x$grade, levels = x$grade)
+g <- 
+  ggplot(data = x,
+       aes(x = grade,
+           y = immunization_rate)) +
+  geom_bar(stat = 'identity', alpha = 0.6) +
+  theme_economist() +
+  xlab('Grade') +
+  ylab('Immunization rate') +
+  ggtitle('Immunization rate by grade')
+ggplotly(g)
+```
+
+The below chart shows absenteeism rate by grade.
+
+```{r}
+x <- by_grade %>%
+  filter(!is.na(grade))
+x$grade <- factor(x$grade, levels = x$grade)
+g <- 
+  ggplot(data = x,
+       aes(x = grade,
+           y = absenteeism_rate)) +
+  geom_bar(stat = 'identity', alpha = 0.6) +
+  theme_economist() +
+  xlab('Grade') +
+  ylab('Absenteeism  rate') +
+  ggtitle('Absenteeism rate by grade')
+ggplotly(g)
+```
+
+## Correlation between consent form return and immunization
+
+As could be expected, consent form return rate is correlated with immunization rate. By definition, this must be true (since immunization can not exceed consent form return), but it is striking that the increases are near linear. This suggests that the driving factor behind immunization is not vaccine acceptance or hesitance, but rather logistics (ie, the distribution and collection of consent forms).
+
+```{r, fig.height = 5}
+g <- ggplot(data = by_school,
+       aes(x = consent_form_return_rate,
+           y = immunization_rate,
+           size = students)) +
+  geom_point(alpha = 0.6) +
+  theme_economist() +
+  xlab('Consent form return rate') +
+  ylab('Immunization rate') +
+  ggtitle('Association between consent form return rate and immunization rate') +
+  labs(subtitle = 'By school')
+g
+```
+
+```{r, fig.height = 6}
+cols <- colorRampPalette(brewer.pal(9, 'Spectral'))(length(unique(by_race$race)))
+g <- ggplot(data = by_race,
+       aes(x = consent_form_return_rate,
+           y = immunization_rate,
+           size = students,
+           color = race)) +
+  geom_point(alpha = 0.6) +
+  theme_economist() +
+  xlab('Consent form return rate') +
+  ylab('Immunization rate') +
+  ggtitle('Association between consent form return rate and immunization rate') +
+  labs(subtitle = 'By race') +
+  scale_color_manual(name = 'Race', 
+                     values = cols)
+g
+```
+
+## Analysis
+
+Immunization is correlated with both age and race, which are in turn correlated with absenteeism. Therefore, in order to parse out the _causal_ effect of immunization on flu season absenteeism, we have to adjust for these potential confounders.
+
+```{r}
+if('model.RData' %in% dir()){
+  load('model.RData')
+} else {
+  # Model
+  fit <- glm(absent ~ race + vaccine, data = df %>% filter(flu_season),
+           family = binomial(link = 'logit'))
+  # Get odds ratios and confidence intervals
+  ors <- exp(cbind(OR = coef(fit), confint(fit)))
+  save(fit, ors, file = 'model.RData')
+}
+
+ors <- data.frame(ors)
+ors$characteristic <- row.names(ors)
+row.names(ors) <- NULL
+ors <- ors[,c(4,1,2,3)]
+names(ors) <- c('characteristic', 'OR', 'LWR', 'UPR')
+ors$characteristic <- gsub('race|TRUE', '', ors$characteristic)
+```
+
+Using a binomial logistic regression model, we estimate that the odds of flu season absence, after adjustment for race, are 0.743 (95% confidence interval of 0.736 to 0.751) for those who were immunized relative to those who were not. In other words, LAIV immunization was associated with an adjusted 25% reduction in the likelihood of flu season absenteeism.
+
+```{r}
+make_pretty(ors)
+```
+
+We can employ the model to estimate the hypothetical effect of 100% immunization. This approach likely underestimates the _true_ effect of universal immunization, since it does not account for herd immunity (ie, protection conferred by others). In reality, similar effects could probably be achieved at less than 100% immunization thanks to herd immunity.
+
+```{r}
+fake_df <- df %>%
+  dplyr::select(date, vaccine, race, id, absent, flu_season) %>%
+  # Keep only flu season
+  filter(flu_season)
+
+# Make all vaccinated
+fake_df$vaccine <- TRUE
+fake_df$predicted <- predict(fit, fake_df, type = 'response')
+
+# Get old rate
+old_rate <- length(which(fake_df$absent)) / nrow(fake_df) * 100
+new_rate <- mean(fake_df$predicted, na.rm = TRUE) * 100
+
+```
+
+In our hypothetical simulation, keeping the same demographic make-up of ACPS students but assuming 100% immunization, our flu season absenteeism rate would have drop from `r old_rate`% to `r new_rate`%. Given that the flu season had `r length(unique(df$date[df$flu_season]))` days and there were `r nrow(students)`, the total reduction in student absences would have been `r round((length(unique(df$date[df$flu_season])) * nrow(students)) * ((old_rate - new_rate) / 100))` days of class.
+
+The effects of scaling up would be differential by race (given the different starting immunization rates, and vaccine-independent different baseline absenteeism rates).
+
+```{r}
+cols <- colorRampPalette(brewer.pal(9, 'Spectral'))(2)
+# Get improvement by race
+x <- fake_df %>%
+  group_by(race) %>%
+  summarise(Current = length(which(absent)) / length(absent) * 100,
+            Projected = mean(predicted, na.rm = TRUE) * 100)
+x <- gather(x, key, value, Current:Projected)
+
+ggplot(data = x,
+       aes(x = race,
+           y = value,
+           group = key,
+           fill = key)) +
+  geom_bar(stat = 'identity', position = 'dodge') +
+  scale_fill_manual(name = '',
+                     values = cols) +
+  xlab('Race') +
+  ylab('Absenteeism rate') +
+  ggtitle('Hypothetical reductions in absenteeism at 100% immunization') +
+  theme_economist()
+```
+
+
+# Discussion
+
+At the individual level, flu immunization is associated with a significant decrease in flu season absenteeism, even after adjustment for non flu season absenteeism (a suitable proxy for all confounding factors).  Over the last three years, on average, one absence is prevented for every six immunizations.  This number can be expected to vary both as a function of (a) the severity of an individual flu season and (b) the immunization rate of the community / classroom.
+
+## Limitations
+
+This study has several important limitations. First, though it indirectly addresses the efficacy of LAIV, we use a proxy (absenteeism) rather than the outcome which LAIV strives to prevent (influenza infection). Since absenteeism is multi-causal, the attribution of prevented absences through immunization is somewhat speculative in nature, even though our modeling makes a strong case for inference.
+
+Second, our data are not entirely complete. Due to errors in record-keeping not all students could be merged between the datasets collected and maintained by the CF and ACPS programs. Therefore, across the board, immunization rates appear lower in this report than they were in reality. We believe that this does not significantly affect model results, since it can be assumed that the data entry errors were _randomly_ distributed across schools, groups and students. 
+
+Finally, this study only takes into account one school year (2015-2016). Stronger inference could be made by using multiple years' data.
+
+Operationally, despite its ongoing success, Control Flu faces challenges.  Though it has expanded access to a recommended health service (influenza immunization) to thousands of children who would have otherwise not received such a service, many still fall through the cracks.  Of particular, African-American students and students of low socioeconomic status are far less likely than their peers to receive influenza immunization.  More than three quarters of students of Asian origin return a consent form, whereas fewer than half of African-American students do.  
+
+## Conclusion
+
+Our analysis shows that LAIV is protective against flu season absenteeism, a finding which suggests that LAIV may be effective at preventing infection by influenza. This is an important finding, especially in light of recent recommendations _not_ to use LAIV. Given its apparent effectiveness at reducing absenteeism and its ease of use (relative to injections) for public health campaigns, LAIV should be considered a viable option for protecting communities from influenza outbreaks.
+
+
+
+```{r}
+# KATHLEEN'S REQUESTS
+# Would like you to put the data together as you did before:
+# Absenteeism as compared to immunization rate, CFRR
+# Absenteeism by grade if possible or by elem, middle, high as compared to immunization rate, CFRR.
+# Teacher absenteeism as compared to immunization rate, CFRR.
+# Total number of missed days per school as compared to IR and CFRR
+# Number of missed days prevented by higher IR for students and teachers
+# 
+# Looking at absenteeism as compared to CFRR may not be relevant/possible but may be interesting since we know that CFRR impacts IR.
+# If you think of anything that could be relevant then by all means add it to the data
+```

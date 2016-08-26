@@ -6,8 +6,13 @@ read_and_clean_absenteeism_data <- function(file = 'data/scrubbed_data_for_joe_c
   require(plyr)
   require(dplyr)
   
+  
   # Read file
-  df <- read_csv(file)
+  # df <- read_csv(file)
+  df <- read.csv(file)
+  
+  # Clean up grade
+  df$grade[df$grade %in% c('30', '31')] <- '3'
   
   # Clean up date of birth
   df$dob <- substr(df$dob, 
@@ -53,6 +58,9 @@ read_and_clean_absenteeism_data <- function(file = 'data/scrubbed_data_for_joe_c
     dplyr::rename(id = studentNumber,
            school = schoolName,
            date = absenceDate)
+  
+  # Make id character
+  df$id <- as.character(df$id)
   
   return(df)
 }
@@ -132,9 +140,8 @@ read_and_clean_immunization_data <- function(directory = 'data/immunization_data
   df$absence <-
     ifelse(is.na(df$absence), FALSE, TRUE)
   df$vaccine <-
-    ifelse(df$vaccine %in% c('1', '2'), TRUE, 
-           ifelse(df$vaccine %in% c('0'), FALSE,
-                  NA))
+    ifelse(df$vaccine %in% c('0', '?'), FALSE, 
+           ifelse(is.na(df$vaccine), TRUE, TRUE))
   
   # Reduce columns
   df <- 
@@ -155,8 +162,8 @@ read_and_clean_immunization_data <- function(directory = 'data/immunization_data
   df <- df[!grepl('/', df$id),]
   df <- df[!grepl('-', df$id),]
   
-  # Make numeric
-  df$id <- as.numeric(as.character(df$id))
+  # Make id character
+  df$id <- as.character(df$id)
   
   # Remove duplicates
   # arrange so that yesses come first
@@ -167,5 +174,65 @@ read_and_clean_immunization_data <- function(directory = 'data/immunization_data
             desc(consent_form_yes),
             desc(vaccine))
   df <- df[!duplicated(df$id),]
+  
+  # Fix date screw up
+  df$vaccine_date[df$vaccine_date <= '2015-01-01'] <- '2015-10-01'
   return(df)
+}
+
+# Create panel data
+create_panel_data <- function(ab,
+                              students){
+  # Manually create date range
+  date_range <- seq(as.Date('2015-08-25'), as.Date('2016-05-29'), by = 1)
+  
+  # Make a dataframe
+  df <- data.frame(date = date_range)
+  df$day <- weekdays(df$date)
+  
+  # Remove weekends
+  df <- df %>% filter(!day %in% c('Saturday', 'Sunday'))
+  
+  # Remove christmas break, etc. (dates for which there are 0 absences)
+  df <- df %>%
+    filter(! date %in% df$date[!df$date %in% sort(unique(ab$date))])
+  
+  # Create an expanded grid of all dates with all students
+  df <- expand.grid(date = df$date,
+                    id = students$id)
+  
+  # Join the expanded grid to absences
+  df <- left_join(df,
+                  ab %>%
+                    mutate(absent = TRUE) %>%
+                    dplyr::select(id, date, absent),
+                  by = c('date', 'id'))
+  
+  # If not absent, assume present
+  df$absent[is.na(df$absent)] <- FALSE
+  
+  # Return
+  return(df)
+}
+
+# Make pretty table
+make_pretty <- function(x){
+  require(Hmisc)
+  require(DT)
+  the_names <- capitalize(gsub('_', ' ', toupper(names(x))))
+  x <- data.frame(x)
+  for (j in 1:ncol(x)){
+    if(class(x[,j]) %in% c('numeric', 'integer')){
+      x[,j] <- round(x[,j], digits = 2)
+    } else {
+      x[,j] <- toupper(x[,j])
+    }
+  }
+  for (j in 1:ncol(x)){
+    if(grepl('rate', names(x)[j])){
+      x[,j] <- paste0(x[,j], '%')
+    }
+  }
+  names(x) <- the_names
+  DT::datatable(x)
 }
