@@ -103,7 +103,9 @@ nfsa <-
   filter(!flu_season) %>%
   group_by(id) %>%
   summarise(nfsa = length(which(absent)),
-            eligibles = length(absent)) %>%
+            eligibles = length(absent),
+            school = first(school),
+            grade = first(grade)) %>%
   mutate(nfsar = nfsa / eligibles * 100) %>%
   dplyr::select(id, nfsar)
 df <- left_join(df, nfsa, by = 'id')
@@ -386,6 +388,52 @@ g
 ```
 
 ## Analysis
+
+
+### Visualizing
+
+The below chart shows school-grade specific flu season absenteeism as a function of immunization rate
+
+```{r}
+temp <-
+  df %>%
+  filter(flu_season) %>%
+  group_by(school, grade) %>%
+  summarise(absences = length(which(absent)),
+            vaccinations = length(unique(id[vaccine])),
+            students = length(unique(id)),
+            eligibles = n()) %>%
+  mutate(immunization_rate = vaccinations / students * 100,
+         absenteeism_rate = absences / eligibles * 100) %>%
+  rename(Grade = grade,
+         Students = students)
+
+# Get school grade combo
+temp$school_grade <- paste0(temp$school, ' ', temp$Grade)
+
+# Remove those not affected by program
+temp <- temp %>% filter(immunization_rate > 0)
+
+g <- ggplot(data = temp,
+       aes(x = immunization_rate,
+           y = absenteeism_rate)) +
+  geom_point(aes(size = Students,
+             color = Grade),
+             alpha = 0.6) +
+  xlab('Immunization rate') +
+  ylab('Absenteeism rate') +
+  theme_economist() +
+  ggtitle('Association between immunization and flu season absenteeism',
+          'Each dot represents one grade at one school') +
+  ylim(0, 20)
+print(g)
+ggsave('~/Desktop/chart_for_parker.pdf')
+print(g + scale_y_log10())
+
+```
+
+### Modeling 
+
 
 Immunization is correlated with both age and race, which are in turn correlated with absenteeism. Therefore, in order to parse out the _causal_ effect of immunization on flu season absenteeism, we have to adjust for these potential confounders.
 
