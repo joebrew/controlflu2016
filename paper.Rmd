@@ -397,14 +397,16 @@ The below chart shows school-grade specific flu season absenteeism as a function
 ```{r}
 temp <-
   df %>%
-  filter(flu_season) %>%
   group_by(school, grade) %>%
-  summarise(absences = length(which(absent)),
+  summarise(absences = length(which(absent[flu_season])),
+            non_flu_absences = length(which(absent[!flu_season])),
             vaccinations = length(unique(id[vaccine])),
             students = length(unique(id)),
-            eligibles = n()) %>%
+            eligibles = length(id[flu_season]),
+            non_flu_eligibles = length(id[!flu_season])) %>%
   mutate(immunization_rate = vaccinations / students * 100,
-         absenteeism_rate = absences / eligibles * 100) %>%
+         absenteeism_rate = absences / eligibles * 100,
+         non_flu_absenteeism_rate = non_flu_absences / non_flu_eligibles * 100) %>%
   rename(Grade = grade,
          Students = students)
 
@@ -414,21 +416,75 @@ temp$school_grade <- paste0(temp$school, ' ', temp$Grade)
 # Remove those not affected by program
 temp <- temp %>% filter(immunization_rate > 0)
 
+# Get increase in absenteeism in flu season
+temp$increase <- temp$absenteeism_rate - temp$non_flu_absenteeism_rate
+
 g <- ggplot(data = temp,
        aes(x = immunization_rate,
-           y = absenteeism_rate)) +
+           y = increase)) +
   geom_point(aes(size = Students,
              color = Grade),
              alpha = 0.6) +
   xlab('Immunization rate') +
-  ylab('Absenteeism rate') +
+  ylab('Increase in absenteeism during flu season') +
   theme_economist() +
-  ggtitle('Association between immunization and flu season absenteeism',
+  ggtitle('Association between immunization and excess absenteeism during flu season',
           'Each dot represents one grade at one school') +
-  ylim(0, 20)
+  geom_hline(yintercept = 0, color = 'red', alpha = 0.6)
 print(g)
 ggsave('~/Desktop/chart_for_parker.pdf')
 print(g + scale_y_log10())
+```
+
+The below chart shows the same, but by school.
+
+```{r}
+
+temp <-
+  df %>%
+  group_by(school) %>%
+  summarise(grades = paste0(sort(unique(grade)), collapse = ','),
+            absences = length(which(absent[flu_season])),
+            non_flu_absences = length(which(absent[!flu_season])),
+            vaccinations = length(unique(id[vaccine])),
+            students = length(unique(id)),
+            eligibles = length(id[flu_season]),
+            non_flu_eligibles = length(id[!flu_season])) %>%
+  mutate(immunization_rate = vaccinations / students * 100,
+         absenteeism_rate = absences / eligibles * 100,
+         non_flu_absenteeism_rate = non_flu_absences / non_flu_eligibles * 100) %>%
+  rename(Students = students) %>%
+  mutate(Type = ifelse(grepl('PK|KG|2,3,4', grades), 'Elementary',
+                       ifelse(grepl('6,7|7,8', grades), 'Middle',
+                              ifelse(grepl('10|11|12', grades), 'High', NA))))
+
+# Remove those not affected by program
+temp <- temp %>% filter(immunization_rate > 0)
+
+# Get increase in absenteeism in flu season
+temp$increase <- temp$absenteeism_rate - temp$non_flu_absenteeism_rate
+
+g <- ggplot(data = temp,
+       aes(x = immunization_rate,
+           y = increase,
+           group = Type)) +
+  geom_point(aes(size = Students,
+             color = Type,
+             pch = Type),
+             alpha = 0.6) +
+  xlab('Immunization rate') +
+  ylab('Increase in absenteeism during flu season') +
+  theme_economist() +
+  ggtitle('Association between immunization and excess absenteeism during flu season',
+          'Each dot represents one grade at one school') +
+  geom_hline(yintercept = 0, color = 'red', alpha = 0.6)
+print(g)
+ggsave('~/Desktop/chart_for_parker.pdf',
+       width = 11,
+       height = 8.5,
+       units = 'in')
+print(g + scale_y_log10())
+```
 
 ```
 
